@@ -2,6 +2,7 @@ import pygame
 import sys
 import random
 
+
 # Initialize Pygame
 pygame.init()
 
@@ -43,7 +44,7 @@ class Bird(pygame.sprite.Sprite):
     def update(self):
         self.speed += GRAVITY
         self.rect.centery += self.speed
-        self.image = fly_images[int(self.speed // 10) % 4]
+        self.image = fly_images[int(self.speed // 10) % 4] if not game_over else dead
         # change angle of bird based on speed
         self.image = pygame.transform.rotozoom(self.image, -self.speed * 3, 1)
     
@@ -79,71 +80,103 @@ class Pipe(pygame.sprite.Sprite):
                 return True
         return False
 
-    
-all_sprites = pygame.sprite.Group()
-pipes = pygame.sprite.Group()
 
-flappy = Bird()
-all_sprites.add(flappy)
+def __main__():
+        
+    all_sprites = pygame.sprite.Group()
+    pipes = pygame.sprite.Group()
 
-def spawn_pipes():
-    pipe_pos = random.randint(50, HEIGHT - 200)
-    top = Pipe(top_img, (WIDTH, pipe_pos))
-    bottom = Pipe(bottom_img, (WIDTH, pipe_pos))
-    all_sprites.add(top, bottom)
-    pipes.add(top, bottom)
+    flappy = Bird()
+    all_sprites.add(flappy)
 
-def draw_score():
-    font = pygame.font.Font(None, 50 )
-    text = font.render(str(score//2), True, (0,0,0))
-    screen.blit(text, (WIDTH // 2, 50))
+    def spawn_pipes():
+        pipe_pos = random.randint(50, HEIGHT - 200)
+        top = Pipe(top_img, (WIDTH, pipe_pos))
+        bottom = Pipe(bottom_img, (WIDTH, pipe_pos))
+        all_sprites.add(top, bottom)
+        pipes.add(top, bottom)
 
-game_over = False
-pipe_timer = 0
+    def draw_score():
+        font = pygame.font.Font(None, 50 )
+        text = font.render(str(score//2), True, (0,0,0))
+        screen.blit(text, (WIDTH // 2, 50))
 
-while True:
-    screen.blit(background, (0, 0))
-    draw_score()
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        if not game_over and event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                flappy.flap()
-    
-    all_sprites.update()
-    
-    pipe_timer += 1
-    if pipe_timer == 100 and not game_over:
+    def reset():
+        global score, game_over, pipe_timer
+        score = 0
+        game_over = False
         pipe_timer = 0
-        spawn_pipes()
-    
-    for pipe in pipes:
-        if not game_over and pipe.collide(flappy) or flappy.rect.top < 0 or flappy.rect.bottom > HEIGHT:
-            flappy.image = dead
-            flappy.speed = 0
-            pipes.empty()
-            game_over = True
+        flappy.rect.center = (WIDTH // 4, HEIGHT // 2)
+        flappy.speed = 0
+        all_sprites.empty()
+        pipes.empty()
+        all_sprites.add(flappy)
+        flappy.image = flat
+        
+
+    game_over = False
+    pipe_timer = 0
+
+    while True:
+        screen.blit(background, (0, 0))
+        draw_score()
+        state_vect = [flappy.rect.centery / HEIGHT, flappy.speed / 10]
+        for pipe in pipes:
+            state_vect.append(pipe.rect.centerx / WIDTH)
+            state_vect.append(pipe.rect.centery / HEIGHT)
+            state_vect.append(pipe.speed / 10)
+        print(state_vect)
+
+        # send state_vect to neural network
+        # get action from neural network
+        # action = neural_network.predict(state_vect)
+        # if action == 1:
+        #     flappy.flap()
+        # Handle events
+
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                pygame.quit()
+                sys.exit()
+            if not game_over and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    flappy.flap()
+        
+        all_sprites.update()
+        
+        pipe_timer += 1
+        if pipe_timer == 100 and not game_over:
             pipe_timer = 0
-            break
-        if not game_over and pipe.score(flappy):
-            score += 1
-    
-    all_sprites.draw(screen)
+            spawn_pipes()
+        
+        for pipe in pipes:
+            if not game_over and pipe.collide(flappy) or flappy.rect.top < 0 or flappy.rect.bottom > HEIGHT:
+                flappy.image = dead
+                flappy.speed = 0
+                pipes.empty()
+                game_over = True
+                pipe_timer = 0
+                break
+            if not game_over and pipe.score(flappy):
+                score += 1
+        
+        all_sprites.draw(screen)
 
-    if game_over:
-        font = pygame.font.Font(None, 100)
-        text = font.render("Game Over", True, (200,0,0))
-        screen.blit(text, (WIDTH // 4, HEIGHT // 2))
-        if pipe_timer == 100:
-            break
+        if game_over:
+            font = pygame.font.Font(None, 50)
+            text = font.render("Game Over", True, (200,0,0))
+            screen.blit(text, (WIDTH // 4, HEIGHT // 2))
+            if pipe_timer == 100:
+                reset()
 
-    
-    
-    pygame.display.flip()
-    clock.tick(FPS)
+        
+        
+        pygame.display.flip()
+        clock.tick(FPS)
 
-pygame.quit()
-    
+    pygame.quit()
 
+
+if __name__ == "__main__":
+    __main__()
+# flappy_bird.py
