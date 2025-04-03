@@ -90,3 +90,45 @@ The project will produce an RL agent capable of playing Flappy Bird with a strat
 - Insights into the effectiveness of RL techniques like ε-greedy exploration and replay buffers.
 
 This project offers an engaging application of reinforcement learning and demonstrates the process of training an agent to solve a real-time control problem.
+
+## **Flappy Bird AI Dataset**
+
+### **Dataset Overview**
+
+For this project, I will generate my own dataset by running simulations of a Flappy Bird clone I created using PyGame. Rather than relying on a static, publicly available dataset, the data will be dynamically created as the game is played by an agent. Each “experience” or game step will be recorded as part of the training process of a Deep Q-Network (DQN) reinforcement learning model. The dataset will consist of state-action-reward-next state tuples, often referred to as experiences, which are essential for experience replay in DQN training.
+
+### **Data Generation Process**
+
+The game environment will continuously produce new experiences during gameplay. At each time step, the game will record:
+
+•	**State**: A fixed-size vector representing the environment, including the bird’s vertical position, velocity, the horizontal distance to the next pipe, and the gap height of that pipe.
+
+•	**Action**: A binary action indicating whether the bird flapped (1) or did nothing (0).
+
+•	**Reward**: A numerical value assigned based on survival and score progress (e.g., +1 for passing a pipe, -100 for dying).
+
+•	**Next State**: The state of the environment immediately following the action.
+
+•	**Done**: A Boolean indicating whether the game ended after this step.
+
+As the model plays the game, these experiences will be stored in a replay buffer of a fixed size (e.g., 50,000 most recent experiences). Once the buffer is full, older data will be discarded in favor of new gameplay.
+
+### **Data Cleaning**
+
+Because this dataset is generated in a controlled simulation, traditional cleaning steps like handling missing values, outliers, or inconsistent formats are unnecessary. However, I will monitor the quality of the data by ensuring:
+
+•	State values remain within expected physical ranges (e.g., positions on screen, velocity limits).
+
+•	Rewards are calculated correctly according to the game logic.
+
+•	No corrupt or invalid entries enter the replay buffer (such as incomplete experience tuples).
+
+If irregularities are detected during development (for example, NaN values in states due to game glitches), I will add error handling to discard or correct those experiences.
+
+### **Source of Data**
+
+All data will be generated locally through my custom PyGame Flappy Bird environment.
+
+### **File Format**
+
+When exported, the data will be stored in a structured format such as CSV, where each row represents a complete experience tuple. However, during training, the data will primarily reside in memory within the replay buffer and only be stored between training session as needed.

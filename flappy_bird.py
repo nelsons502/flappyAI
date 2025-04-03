@@ -15,6 +15,8 @@ GRAVITY = 0.25
 FLAP_PWR = -6 
 PIPE_GAP = 150
 score = 0
+game_over = False
+pipe_timer = 0
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -42,6 +44,7 @@ class Bird(pygame.sprite.Sprite):
         self.speed = 0
     
     def update(self):
+        global game_over
         self.speed += GRAVITY
         self.rect.centery += self.speed
         self.image = fly_images[int(self.speed // 10) % 4] if not game_over else dead
@@ -82,6 +85,7 @@ class Pipe(pygame.sprite.Sprite):
 
 
 def __main__():
+    global score, game_over, pipe_timer
         
     all_sprites = pygame.sprite.Group()
     pipes = pygame.sprite.Group()
@@ -97,6 +101,7 @@ def __main__():
         pipes.add(top, bottom)
 
     def draw_score():
+        global score
         font = pygame.font.Font(None, 50 )
         text = font.render(str(score//2), True, (0,0,0))
         screen.blit(text, (WIDTH // 2, 50))
@@ -112,20 +117,40 @@ def __main__():
         pipes.empty()
         all_sprites.add(flappy)
         flappy.image = flat
-        
-
-    game_over = False
-    pipe_timer = 0
-
-    while True:
-        screen.blit(background, (0, 0))
-        draw_score()
+    
+    def get_game_state():
+        MAX_PIPES = 4
         state_vect = [flappy.rect.centery / HEIGHT, flappy.speed / 10]
+
         for pipe in pipes:
             state_vect.append(pipe.rect.centerx / WIDTH)
             state_vect.append(pipe.rect.centery / HEIGHT)
             state_vect.append(pipe.speed / 10)
-        print(state_vect)
+
+        # Pad with zeros if fewer pipes
+        while len(state_vect) < 2 + MAX_PIPES * 3:
+            state_vect.append(0.0)
+        
+        return state_vect
+
+        ''' # Alternative state vector with compact info about the whole state
+        if pipes:
+            nearest_pipe = min(pipes, key=lambda p: p.rect.centerx - flappy.rect.centerx)
+            state_vect.extend([
+                nearest_pipe.rect.centerx / WIDTH,
+                nearest_pipe.rect.centery / HEIGHT,
+                nearest_pipe.speed / 10,
+            ])
+        else:
+            state_vect.extend([0.0, 0.0, 0.0])
+            '''
+
+
+    while True:
+        screen.blit(background, (0, 0))
+        draw_score()
+        state = get_game_state()
+        print(state)
 
         # send state_vect to neural network
         # get action from neural network
