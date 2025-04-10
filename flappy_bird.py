@@ -1,6 +1,7 @@
 import pygame
 import sys
 import random
+import socket
 
 
 # Initialize Pygame
@@ -17,6 +18,7 @@ PIPE_GAP = 150
 score = 0
 game_over = False
 pipe_timer = 0
+mode = "play"
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -84,6 +86,30 @@ class Pipe(pygame.sprite.Sprite):
         return False
 
 
+def connect_to_ai():
+    host = "localhost"
+    port = 12345
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((host, port))
+        return client_socket
+    except Exception as e:
+        print("Error connecting to AI server:", e)
+        sys.exit(1)
+
+def send_state_and_receive_action(client_socket, state):
+    try:
+        state_str = ','.join(map(str, state))
+        client_socket.sendall(state_str.encode('utf-8'))
+        data = client_socket.recv(1024).decode('utf-8')
+        action = int(data.strip())
+        return action
+    except Exception as e:
+        print("Error in sending state or receiving action:", e)
+        return 0
+
+client_socket = connect_to_ai()
+
 def __main__():
     global score, game_over, pipe_timer
         
@@ -145,27 +171,25 @@ def __main__():
             state_vect.extend([0.0, 0.0, 0.0])
             '''
 
-
     while True:
         screen.blit(background, (0, 0))
         draw_score()
-        state = get_game_state()
-        print(state)
 
-        # send state_vect to neural network
-        # get action from neural network
-        # action = neural_network.predict(state_vect)
-        # if action == 1:
-        #     flappy.flap()
-        # Handle events
-
-        for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                pygame.quit()
-                sys.exit()
-            if not game_over and event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    flappy.flap()
+        if mode == "train":
+            state = get_game_state()
+            #print(state)
+            action = send_state_and_receive_action(client_socket, state)
+            if action == 1 and not game_over:
+                flappy.flap()
+        else:
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                if not game_over and event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        flappy.flap()
         
         all_sprites.update()
         
@@ -193,8 +217,6 @@ def __main__():
             screen.blit(text, (WIDTH // 4, HEIGHT // 2))
             if pipe_timer == 100:
                 reset()
-
-        
         
         pygame.display.flip()
         clock.tick(FPS)
@@ -203,5 +225,8 @@ def __main__():
 
 
 if __name__ == "__main__":
+    # set mode to train if train argument included
+    mode = "train" if "train" in sys.argv else "play"
     __main__()
+    
 # flappy_bird.py
