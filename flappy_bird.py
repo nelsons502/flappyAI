@@ -176,6 +176,16 @@ def __main__():
         draw_score()
 
         if mode == "train":
+            '''
+            Right now, you’re only sending the current state to the AI. Now you’ll need to:
+
+        🟩 1. Track the full experience tuple:
+            •	state: before applying the action
+            •	action: received from the AI
+            •	reward: depends on game logic (e.g., +1 per frame, -100 if game over)
+            •	next_state: after stepping the environment
+            •	done: True if game is over
+            '''
             state = get_game_state()
             #print(state)
             action = send_state_and_receive_action(client_socket, state)
