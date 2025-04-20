@@ -228,7 +228,8 @@ def __main__():
             # get reward
             reward = 1 if not game_over else -100
             # send new state to AI
-            send_game_info(client_socket, new_state)
+            package = (state, action, reward, new_state, game_over)
+            send_game_info(client_socket, package) # TODO: check if this is correct
 
         elif mode == "play":
             # Handle events

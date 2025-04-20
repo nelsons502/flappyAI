@@ -6,7 +6,7 @@ import collections
 import socket
 import sys
 
-device = "random"
+device = None
 # Check if MPS (Metal Performance Shaders) is available
 if not torch.backends.mps.is_available():
     raise RuntimeError("MPS is not available. Please check your PyTorch installation or use a different device.")
@@ -69,6 +69,29 @@ def select_action(state, policy_net=None, epsilon=0.1): # need to pass policy_ne
             q_values = policy_net(state_tensor)
             action = q_values.argmax().item()
             return action
+        
+def insert_data(state, action, reward, next_state, done):
+    # Add the transition to the replay buffer
+    replay_buffer.add(state, action, reward, next_state, done)
+
+    # Sample a batch of transitions from the replay buffer
+    if len(replay_buffer) > batch_size:
+        states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
+
+        # Compute the target Q-values
+        target_q_values = policy_net(next_states).max(1)[0].detach()
+        expected_q_values = rewards + (1 - dones) * gamma * target_q_values
+
+        # Compute the current Q-values
+        current_q_values = policy_net(states).gather(1, actions.unsqueeze(1)).squeeze()
+
+        # Compute the loss
+        loss = nn.MSELoss()(current_q_values, expected_q_values)
+
+        # Optimize the model
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
     
 
 def start_server():
@@ -89,8 +112,10 @@ def start_server():
                 break
 
             state = list(map(float, data.split(',')))
+            print("Received state:", state)
 
             action = select_action(state)
+            print("Selected action:", action)
             
             conn.sendall(str(action).encode('utf-8'))
 
@@ -98,10 +123,12 @@ def start_server():
             data = conn.recv(2048).decode('utf-8')
             if not data:
                 break
-            state, reward = data.split(',')
-            state = list(map(float, state.split(',')))
-            reward = float(reward)
+            print("Received data:", data)
+
+            state, action, reward, next_state, done = data.split(',')
             # record state, action, reward, next_state, done
+
+
 
 
     except Exception as e:
@@ -112,9 +139,9 @@ def start_server():
 
 
 
-#buffer_capacity = 10000
-#replay_buffer = ReplayBuffer(buffer_capacity)
-#policy_net = Flap_DPN(8, 2).to(device)
+buffer_capacity = 10000
+replay_buffer = ReplayBuffer(buffer_capacity)
+policy_net = Flap_DPN(8, 2).to(device)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1: #options should be "random", "train", "eval"
