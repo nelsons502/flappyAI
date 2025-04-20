@@ -89,11 +89,21 @@ def start_server():
                 break
 
             state = list(map(float, data.split(',')))
-            #print("Received state:", state)
 
             action = select_action(state)
+            
             conn.sendall(str(action).encode('utf-8'))
-            #print("Sent action:", action)
+
+            # recieve state and reward
+            data = conn.recv(2048).decode('utf-8')
+            if not data:
+                break
+            state, reward = data.split(',')
+            state = list(map(float, state.split(',')))
+            reward = float(reward)
+            # record state, action, reward, next_state, done
+
+
     except Exception as e:
         print("Error:", e)
     finally:

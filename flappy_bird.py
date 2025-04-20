@@ -85,7 +85,6 @@ class Pipe(pygame.sprite.Sprite):
                 return True
         return False
 
-
 def connect_to_ai():
     host = "localhost"
     port = 12345
@@ -107,6 +106,16 @@ def send_state_and_receive_action(client_socket, state):
     except Exception as e:
         print("Error in sending state or receiving action:", e)
         return 0
+    
+def send_game_info(client_socket, state, reward):
+    # Send (state, action, reward, next_state, done) to the AI
+    try:
+        state_str = ','.join(map(str, state))
+        reward_str = str(reward)
+        message = f"{state_str},{reward_str}"
+        client_socket.sendall(message.encode('utf-8'))
+    except Exception as e:
+        print("Error in sending game info:", e)
 
 client_socket = connect_to_ai()
 
@@ -158,7 +167,6 @@ def __main__():
             state_vect.append(0.0)
         
         return state_vect
-
         ''' # Alternative state vector with compact info about the whole state
         if pipes:
             nearest_pipe = min(pipes, key=lambda p: p.rect.centerx - flappy.rect.centerx)
@@ -170,44 +178,16 @@ def __main__():
         else:
             state_vect.extend([0.0, 0.0, 0.0])
             '''
-
-    while True:
-        screen.blit(background, (0, 0))
-        draw_score()
-
-        if mode == "train":
-            '''
-            Right now, you’re only sending the current state to the AI. Now you’ll need to:
-
-        🟩 1. Track the full experience tuple:
-            •	state: before applying the action
-            •	action: received from the AI
-            •	reward: depends on game logic (e.g., +1 per frame, -100 if game over)
-            •	next_state: after stepping the environment
-            •	done: True if game is over
-            '''
-            state = get_game_state()
-            #print(state)
-            action = send_state_and_receive_action(client_socket, state)
-            if action == 1 and not game_over:
-                flappy.flap()
-        else:
-            # Handle events
-            for event in pygame.event.get():
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    sys.exit()
-                if not game_over and event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE:
-                        flappy.flap()
-        
+    
+    def update_game():
+        global game_over, score, pipes, flappy, pipe_timer
         all_sprites.update()
-        
+        # possibly add pipes
         pipe_timer += 1
         if pipe_timer == 100 and not game_over:
             pipe_timer = 0
             spawn_pipes()
-        
+        # check for collisions
         for pipe in pipes:
             if not game_over and pipe.collide(flappy) or flappy.rect.top < 0 or flappy.rect.bottom > HEIGHT:
                 flappy.image = dead
@@ -220,18 +200,47 @@ def __main__():
                 score += 1
         
         all_sprites.draw(screen)
-
         if game_over:
             font = pygame.font.Font(None, 50)
             text = font.render("Game Over", True, (200,0,0))
             screen.blit(text, (WIDTH // 4, HEIGHT // 2))
             if pipe_timer == 100:
                 reset()
-        
         pygame.display.flip()
         clock.tick(FPS)
 
-    pygame.quit()
+    while True:
+        screen.blit(background, (0, 0))
+        draw_score()
+
+        if mode == "train":
+            # get current state
+            state = get_game_state()
+            # ask AI for action
+            action = send_state_and_receive_action(client_socket, state)
+            # apply action
+            if action == 1 and not game_over:
+                flappy.flap()
+            # update game
+            update_game()
+            # get new state
+            new_state = get_game_state()
+            # get reward
+            reward = 1 if not game_over else -100
+            # send new state to AI
+            send_game_info(client_socket, new_state)
+
+        elif mode == "play":
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                if not game_over and event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        flappy.flap()
+            # Update game state
+            update_game()
 
 
 if __name__ == "__main__":
