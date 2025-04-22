@@ -207,7 +207,7 @@ def __main__():
         clock.tick(FPS)
 
     action = 0 # initial default action
-    reward = 1
+    reward = 0 # initial default reward
     new_state = [0] * 14 # initial state vector
     while True:
         screen.blit(background, (0, 0))
@@ -220,7 +220,8 @@ def __main__():
                 flappy.flap() # apply action
             update_game() # update game
             new_state = get_game_state() # get new state
-            reward = 1 if not game_over else -100 # get reward
+            reward = 1 + score*10 if not game_over else -100 # get reward
+
             # send new state to AI
             send_experience(client_socket, state, action, reward, new_state, game_over)
 

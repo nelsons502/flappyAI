@@ -5,6 +5,7 @@ import random
 import collections
 import socket
 import sys
+import math
 
 device = None
 # Check if MPS (Metal Performance Shaders) is available
@@ -20,9 +21,15 @@ BATCH_SIZE = 32
 BUFFER_CAPACITY = 10000
 PORT = 12345
 HOST = "localhost"
-EPSILON = 0.1
+# epsilon decay parameters
+EPSILON_START = 1.0
+EPSILON_END = 0.001 # potentially increase to 0.01
+EPSILON_DECAY = 100000 # potntially increase
+epsilon = EPSILON_START
+# Hyperparameters
+LEARNING_RATE = 0.001
 GAMMA = 0.99
-NUMBER_OF_EPISODES = 1000
+NUMBER_OF_EPISODES = 100000 # potentially increase
 TARGET_UPDATE_FREQ = 1000
 step_count = 0
 
@@ -66,12 +73,12 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
-
-def select_action(state, policy_net=None, epsilon=0.1): # need to pass policy_net for training mode
+def select_action(state, policy_net=None): # need to pass policy_net for training mode
+    global mode, epsilon
     if mode == "random" or policy_net is None:
-        return random.choice([0]*20 + [1])
+        return random.choice([0]*29 + [1])
     if random.random() < epsilon:
-        return random.randint(0,1)
+        return random.choice([0]*29 + [1])
     else:
         with torch.no_grad():
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
@@ -90,7 +97,7 @@ def insert_data(state, action, reward, next_state, done):
 
         # Compute the target Q-values
         target_q_values = target_net(next_states).max(1)[0].detach()
-        not_dones = float(round(1.0 - dones, 0))
+        not_dones = 1.0 - dones
         expected_q_values = rewards + not_dones * GAMMA * target_q_values
 
         # Compute the current Q-values
@@ -105,12 +112,18 @@ def insert_data(state, action, reward, next_state, done):
         optimizer.step()
 
         step_count += 1
+        # Update epsilon
+        update_epsilon()
         # Update the target network
         if step_count % TARGET_UPDATE_FREQ == 0:
             target_net.load_state_dict(policy_net.state_dict())
             print("Target network updated.")
             print("Step count:", step_count)
             print("Loss:", loss.item())
+            # Save models
+            torch.save(policy_net.state_dict(), "flap_dqn.pth")
+            torch.save(target_net.state_dict(), "flap_dqn_target.pth")
+            print("Models saved.")
     
 def receive_experience(conn, state_size=14): # state_size should be 14
     data = conn.recv(1024).decode('utf-8')
@@ -135,12 +148,15 @@ def start_server():
 
     conn, addr = server_socket.accept()
     print("Connection from", addr)
+    episode_reward = 0 # track total reward for the episode
+    episode = 0 # track the episode number
+    printed = False # track if the episode reward has been printed
     try:
         while True:
             state = receive_state(conn)
             if not state:
                 break
-            action = select_action(state, )
+            action = select_action(state, policy_net)
             conn.sendall(str(action).encode('utf-8'))
 
             # recieve state and reward
@@ -151,20 +167,41 @@ def start_server():
             # record state, action, reward, next_state, done
             insert_data(state, action, reward, next_state, done)
 
+            episode_reward += reward
+            if done and not printed:
+                printed = True
+                print(f"Episode {episode}: Total Reward = {episode_reward}")
+                episode_reward = 0
+                episode += 1
+                if episode > NUMBER_OF_EPISODES:
+                    print("Training complete.")
+                    break
+            if not done and printed:
+                printed = False
+
     except Exception as e:
         print("Error:", e)
     finally:
         conn.close()
         server_socket.close()
 
-
+def update_epsilon():
+    global epsilon, step_count
+    # Update epsilon using exponential decay
+    epsilon = EPSILON_END + (EPSILON_START - EPSILON_END) * math.exp(-step_count / EPSILON_DECAY)
+    # Print the current epsilon value
+    if step_count % 500 == 0:
+        print(f"Epsilon: {epsilon:.4f}")
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "train"
 
     replay_buffer = ReplayBuffer(BUFFER_CAPACITY)
     policy_net = Flap_DPN(14, 2).to(device)
-    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
+    optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+
+    # Initialize target_net and sync it to policy_net
+    target_net = Flap_DPN(14, 2).to(device)
 
     # Optionally load saved weights
     if mode == "continue":
@@ -173,12 +210,16 @@ if __name__ == "__main__":
             print("Model loaded successfully.")
         except FileNotFoundError:
             print("No saved model found. Starting training from scratch.")
+        try:
+            target_net.load_state_dict(torch.load("flap_dqn_target.pth"))
+            print("Target model loaded successfully.")
+        except FileNotFoundError:
+            print("No saved target model found. Initializing from policy net.")
+            target_net.load_state_dict(policy_net.state_dict())
+    else:
+        target_net.load_state_dict(policy_net.state_dict())
     # Always set to train mode
     policy_net.train()
 
-    # Initialize target_net and sync it to policy_net
-    target_net = Flap_DPN(14, 2).to(device)
-    target_net.load_state_dict(policy_net.state_dict())
-    target_net.eval()
     # start the server (and thus the game)
     start_server()
