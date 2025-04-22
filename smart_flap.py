@@ -16,6 +16,15 @@ else:
 
 mode = None
 
+BATCH_SIZE = 32
+BUFFER_CAPACITY = 10000
+PORT = 12345
+HOST = "localhost"
+EPSILON = 0.1
+GAMMA = 0.99
+NUMBER_OF_EPISODES = 1000
+TARGET_UPDATE_FREQ = 1000
+step_count = 0
 
 # set up the AI model
 class Flap_DPN(nn.Module):
@@ -71,16 +80,18 @@ def select_action(state, policy_net=None, epsilon=0.1): # need to pass policy_ne
             return action
         
 def insert_data(state, action, reward, next_state, done):
+    global step_count
     # Add the transition to the replay buffer
     replay_buffer.add(state, action, reward, next_state, done)
 
     # Sample a batch of transitions from the replay buffer
-    if len(replay_buffer) > batch_size:
-        states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
+    if len(replay_buffer) > BATCH_SIZE:
+        states, actions, rewards, next_states, dones = replay_buffer.sample(BATCH_SIZE)
 
         # Compute the target Q-values
-        target_q_values = policy_net(next_states).max(1)[0].detach()
-        expected_q_values = rewards + (1 - dones) * gamma * target_q_values
+        target_q_values = target_net(next_states).max(1)[0].detach()
+        not_dones = float(round(1.0 - dones, 0))
+        expected_q_values = rewards + not_dones * GAMMA * target_q_values
 
         # Compute the current Q-values
         current_q_values = policy_net(states).gather(1, actions.unsqueeze(1)).squeeze()
@@ -92,44 +103,53 @@ def insert_data(state, action, reward, next_state, done):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        step_count += 1
+        # Update the target network
+        if step_count % TARGET_UPDATE_FREQ == 0:
+            target_net.load_state_dict(policy_net.state_dict())
+            print("Target network updated.")
+            print("Step count:", step_count)
+            print("Loss:", loss.item())
     
+def receive_experience(conn, state_size=14): # state_size should be 14
+    data = conn.recv(1024).decode('utf-8')
+    floats = list(map(float, data.strip().split(',')))
+    state = floats[:state_size]
+    action = int(floats[state_size])
+    reward = floats[state_size + 1]
+    next_state = floats[state_size + 2:2 * state_size + 2]
+    done = bool(floats[-1])
+    return state, action, reward, next_state, done
+
+def receive_state(conn):
+    state = conn.recv(1024).decode('utf-8')
+    state = list(map(float, state.strip().split(',')))
+    return state
 
 def start_server():
-    host = "localhost"
-    port = 12345
-
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
+    server_socket.bind((HOST, PORT))
     server_socket.listen(1)
-    print("AI server listening on port", port)
+    print("AI server listening on port", PORT)
 
     conn, addr = server_socket.accept()
     print("Connection from", addr)
     try:
         while True:
-            data = conn.recv(2048).decode('utf-8')
-            if not data:
+            state = receive_state(conn)
+            if not state:
                 break
-
-            state = list(map(float, data.split(',')))
-            print("Received state:", state)
-
-            action = select_action(state)
-            print("Selected action:", action)
-            
+            action = select_action(state, )
             conn.sendall(str(action).encode('utf-8'))
 
             # recieve state and reward
-            data = conn.recv(2048).decode('utf-8')
+            data = receive_experience(conn)
             if not data:
                 break
-            print("Received data:", data)
-
-            state, action, reward, next_state, done = data.split(',')
+            state, action, reward, next_state, done = data
             # record state, action, reward, next_state, done
-
-
-
+            insert_data(state, action, reward, next_state, done)
 
     except Exception as e:
         print("Error:", e)
@@ -139,11 +159,26 @@ def start_server():
 
 
 
-buffer_capacity = 10000
-replay_buffer = ReplayBuffer(buffer_capacity)
-policy_net = Flap_DPN(8, 2).to(device)
-
 if __name__ == "__main__":
-    if len(sys.argv) > 1: #options should be "random", "train", "eval"
-        mode = sys.argv[1]
+    mode = sys.argv[1] if len(sys.argv) > 1 else "train"
+
+    replay_buffer = ReplayBuffer(BUFFER_CAPACITY)
+    policy_net = Flap_DPN(14, 2).to(device)
+    optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
+
+    # Optionally load saved weights
+    if mode == "continue":
+        try:
+            policy_net.load_state_dict(torch.load("flap_dqn.pth"))
+            print("Model loaded successfully.")
+        except FileNotFoundError:
+            print("No saved model found. Starting training from scratch.")
+    # Always set to train mode
+    policy_net.train()
+
+    # Initialize target_net and sync it to policy_net
+    target_net = Flap_DPN(14, 2).to(device)
+    target_net.load_state_dict(policy_net.state_dict())
+    target_net.eval()
+    # start the server (and thus the game)
     start_server()

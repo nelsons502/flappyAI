@@ -20,6 +20,9 @@ game_over = False
 pipe_timer = 0
 mode = "play"
 
+HOST = "localhost"
+PORT = 12345
+
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
 pygame.display.set_caption("Flappy Bird")
@@ -86,36 +89,30 @@ class Pipe(pygame.sprite.Sprite):
         return False
 
 def connect_to_ai():
-    host = "localhost"
-    port = 12345
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect((host, port))
+        client_socket.connect((HOST, PORT))
+        print("Game connected to AI server")
         return client_socket
     except Exception as e:
         print("Error connecting to AI server:", e)
         sys.exit(1)
 
-def send_state_and_receive_action(client_socket, state):
-    try:
-        state_str = ','.join(map(str, state))
-        client_socket.sendall(state_str.encode('utf-8'))
-        data = client_socket.recv(1024).decode('utf-8')
-        action = int(data.strip())
-        return action
-    except Exception as e:
-        print("Error in sending state or receiving action:", e)
-        return 0
-    
-def send_game_info(client_socket, state, reward):
-    # Send (state, action, reward, next_state, done) to the AI
-    try:
-        state_str = ','.join(map(str, state))
-        reward_str = str(reward)
-        message = f"{state_str},{reward_str}"
-        client_socket.sendall(message.encode('utf-8'))
-    except Exception as e:
-        print("Error in sending game info:", e)
+def send_experience(client_socket, state, action, reward, next_state, done):
+    full_data = state + [action, reward] + next_state + [float(done)]
+    message = ",".join(map(str, full_data))
+    client_socket.sendall(message.encode('utf-8'))
+
+def send_state_and_get_action(client_socket, state):
+    state = [str(x) for x in state]
+    state = ",".join(state)
+    client_socket.sendall(state.encode('utf-8'))
+    action = client_socket.recv(1024).decode('utf-8')
+    if not action:
+        print("No action received from AI server")
+        raise Exception("No action received from AI server")
+    action = action.strip()
+    return int(action)
 
 client_socket = connect_to_ai()
 
@@ -178,9 +175,9 @@ def __main__():
         else:
             state_vect.extend([0.0, 0.0, 0.0])
             '''
-    
+
     def update_game():
-        global game_over, score, pipes, flappy, pipe_timer
+        global game_over, score, pipe_timer
         all_sprites.update()
         # possibly add pipes
         pipe_timer += 1
@@ -209,27 +206,23 @@ def __main__():
         pygame.display.flip()
         clock.tick(FPS)
 
+    action = 0 # initial default action
+    reward = 1
+    new_state = [0] * 14 # initial state vector
     while True:
         screen.blit(background, (0, 0))
         draw_score()
 
         if mode == "train":
-            # get current state
-            state = get_game_state()
-            # ask AI for action
-            action = send_state_and_receive_action(client_socket, state)
-            # apply action
+            state = get_game_state() # get current state
+            action = send_state_and_get_action(client_socket, state) # ask AI for action
             if action == 1 and not game_over:
-                flappy.flap()
-            # update game
-            update_game()
-            # get new state
-            new_state = get_game_state()
-            # get reward
-            reward = 1 if not game_over else -100
+                flappy.flap() # apply action
+            update_game() # update game
+            new_state = get_game_state() # get new state
+            reward = 1 if not game_over else -100 # get reward
             # send new state to AI
-            package = (state, action, reward, new_state, game_over)
-            send_game_info(client_socket, package) # TODO: check if this is correct
+            send_experience(client_socket, state, action, reward, new_state, game_over)
 
         elif mode == "play":
             # Handle events
