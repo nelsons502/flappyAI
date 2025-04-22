@@ -32,6 +32,8 @@ GAMMA = 0.99
 NUMBER_OF_EPISODES = 100000 # potentially increase
 TARGET_UPDATE_FREQ = 1000
 step_count = 0
+# added to prevent socket from blocking
+shared_buffer = ""
 
 # set up the AI model
 class Flap_DPN(nn.Module):
@@ -125,9 +127,15 @@ def insert_data(state, action, reward, next_state, done):
             torch.save(target_net.state_dict(), "flap_dqn_target.pth")
             print("Models saved.")
     
-def receive_experience(conn, state_size=14): # state_size should be 14
-    data = conn.recv(1024).decode('utf-8')
-    floats = list(map(float, data.strip().split(',')))
+def receive_experience(conn, state_size=14):
+    global shared_buffer
+    while '\n' not in shared_buffer:
+        data = conn.recv(1024).decode('utf-8')
+        if not data:
+            return None
+        shared_buffer += data
+    exp_line, shared_buffer = shared_buffer.split("\n", 1)
+    floats = list(map(float, exp_line.strip().split(',')))
     state = floats[:state_size]
     action = int(floats[state_size])
     reward = floats[state_size + 1]
@@ -136,8 +144,14 @@ def receive_experience(conn, state_size=14): # state_size should be 14
     return state, action, reward, next_state, done
 
 def receive_state(conn):
-    state = conn.recv(1024).decode('utf-8')
-    state = list(map(float, state.strip().split(',')))
+    global shared_buffer
+    while '\n' not in shared_buffer:
+        data = conn.recv(1024).decode('utf-8')
+        if not data:
+            return None
+        shared_buffer += data
+    state_line, shared_buffer = shared_buffer.split("\n", 1)
+    state = list(map(float, state_line.strip().split(',')))
     return state
 
 def start_server():

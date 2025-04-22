@@ -101,12 +101,12 @@ def connect_to_ai():
 def send_experience(client_socket, state, action, reward, next_state, done):
     full_data = state + [action, reward] + next_state + [float(done)]
     message = ",".join(map(str, full_data))
-    client_socket.sendall(message.encode('utf-8'))
+    client_socket.sendall((message+'\n').encode('utf-8'))
 
 def send_state_and_get_action(client_socket, state):
     state = [str(x) for x in state]
     state = ",".join(state)
-    client_socket.sendall(state.encode('utf-8'))
+    client_socket.sendall((state+'\n').encode('utf-8'))
     action = client_socket.recv(1024).decode('utf-8')
     if not action:
         print("No action received from AI server")
